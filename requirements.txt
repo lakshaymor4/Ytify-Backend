@@ -1,0 +1,10 @@
+ytmusicapi
+spotipy
+fuzzywuzzy
+langchain
+langgraph
+langchain-core
+langchain-community
+langchain-groq
+pyjwt
+jsonify
