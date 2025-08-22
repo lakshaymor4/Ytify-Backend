@@ -8,3 +8,4 @@ langchain-community
 langchain-groq
 pyjwt
 jsonify
+celery

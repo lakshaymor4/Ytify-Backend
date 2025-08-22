@@ -1,18 +1,14 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 class Config:
-    # Spotify API Configuration
     SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
     SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
     SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8888/callback')
-
-    SECRET = os.getev('secret')
-    
-    # YouTube Music Configuration
+    SECRET = os.getenv('secret')
+    REDIS_URL = os.getenv('REDIS')
     YOUTUBE_MUSIC_HEADERS_FILE = "headers"
     
    
@@ -20,7 +16,6 @@ class Config:
     SPOTIFY_CACHE_FILE = os.path.join(CACHE_DIR, 'spotify_cache.json')
     TRANSFER_LOG_FILE = 'transfer_log.txt'
     
-    # Transfer Settings
     MAX_SEARCH_RESULTS = 5
     SIMILARITY_THRESHOLD = 0.8
     
