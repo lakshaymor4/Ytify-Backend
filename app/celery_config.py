@@ -1,10 +1,10 @@
 from celery import Celery
-import config
+from config import Config
 
 celery = Celery(
     "playlist_transfer",
-    broker=config.REDIS_URL,  
-    backend=config.REDIS_URL
+    broker=Config.REDIS_URL,  
+    backend=Config.REDIS_URL
 )
 
 celery.conf.task_track_started = True

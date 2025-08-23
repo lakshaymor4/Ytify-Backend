@@ -10,7 +10,9 @@ class YouTubeClient:
     
     def authenticate(self, session_id):
         try:
-            paths = Config.YOUTUBE_MUSIC_HEADERS_FILE + session_id + ".json"
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            paths = os.path.join(base_dir, f"header{session_id}.json")
+            
             if not os.path.exists(paths):
                 return False, f"Headers file not found."
             

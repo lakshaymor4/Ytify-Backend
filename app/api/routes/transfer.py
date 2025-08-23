@@ -2,10 +2,12 @@ from fastapi import FastAPI, HTTPException
 from services import transfer_service
 from celery_config import celery  
 from celery.result import AsyncResult
+from fastapi import APIRouter
 
+router = APIRouter()
 app = FastAPI()
 
-@app.post("/api/transfer")
+@router.post("/")
 async def start_transfer(body: dict):
     playlist_ids = body.get("playlist_ids", [])
     options = body.get("options", {})
@@ -17,7 +19,7 @@ async def start_transfer(body: dict):
     return {"success": True, "task_id": task.id}
 
 
-@app.get("/api/transfer/status/{task_id}")
+@router.get("/status/{task_id}")
 async def get_status(task_id: str):
     result = celery.AsyncResult(task_id)
 
@@ -43,7 +45,7 @@ async def get_status(task_id: str):
     else:
         return {"task_id": task_id, "status": result.state}
     
-@app.post("/cancel/{task_id}")
+@router.post("/cancel/{task_id}")
 def cancel_task(task_id: str):
     result = AsyncResult(task_id, app=celery)
     result.revoke(terminate=True, signal="SIGTERM")

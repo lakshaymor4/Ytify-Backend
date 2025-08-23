@@ -6,7 +6,7 @@ load_dotenv()
 class Config:
     SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
     SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
-    SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8888/callback')
+    SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8000/callback/')
     SECRET = os.getenv('secret')
     REDIS_URL = os.getenv('REDIS')
     YOUTUBE_MUSIC_HEADERS_FILE = "headers"
@@ -19,6 +19,10 @@ class Config:
     MAX_SEARCH_RESULTS = 5
     SIMILARITY_THRESHOLD = 0.8
     
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    SPOTIFY_CACHE_DIR = os.path.join(BASE_DIR, "spotify_caches")
+    os.makedirs(SPOTIFY_CACHE_DIR, exist_ok=True)
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present."""

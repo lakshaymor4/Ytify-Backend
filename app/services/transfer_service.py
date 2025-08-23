@@ -1,10 +1,10 @@
 import time
 import json
 from datetime import datetime
-from spotify_service import SpotifyClient
-from youtube_service import YouTubeClient
+from .spotify_service import SpotifyClient
+from .youtube_service import YouTubeClient
 from utils import log_message
-import gai
+from . import gai
 
 class TransferManager:
     def __init__(self, progress_callback=None):
@@ -31,7 +31,7 @@ class TransferManager:
         return True, "Successfully authenticated with both services"
     
     def get_spotify_playlists(self):
-        return self.spotify_client.get_user_playlists()
+        return self.spotify_client.get_playlist()
     
     def transfer_playlists(self, selected_playlists, options=None):
         if options is None:
@@ -115,7 +115,6 @@ class TransferManager:
                     f"Processing liked song {i+1}/{len(tracks)}: {track['name']}"
                 )
                 
-                # Search for the song on YouTube Music
                 youtube_track, similarity = self.youtube_client.search_song(
                     track['name'], 
                     ', '.join(track['artists']),
