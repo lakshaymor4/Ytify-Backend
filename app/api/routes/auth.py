@@ -10,11 +10,49 @@ from fastapi import Header, HTTPException, Depends, Request
 from typing import Optional
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
+from fastapi.responses import RedirectResponse
+import os
 router = APIRouter()
 # Set up logging for debug
 logging.basicConfig(level=logging.DEBUG)
 
+from spotipy.oauth2 import SpotifyOAuth
+
+@router.get("/spotify/login")
+async def spotify_login(request: Request):
+    try:
+        token = request.query_params.get("token")
+        
+        logging.debug(f"/spotify/login called. Token: {token}")
+
+        try:
+            claims = jwt.decode(token, Config.SECRET, algorithms=["HS256"])
+            print("claims:", claims)
+            session_id = claims.get("uuid")
+            logging.debug(f"Session ID: {session_id}")
+        except Exception as e:
+            logging.error(f"JWT decode failed: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={'success': "False", 'message': 'Invalid token'}
+            )
+
+        sp_oauth = SpotifyOAuth(
+            client_id=Config.SPOTIFY_CLIENT_ID,
+            client_secret=Config.SPOTIFY_CLIENT_SECRET,
+            redirect_uri=Config.SPOTIFY_REDIRECT_URI, 
+            scope="user-library-read playlist-read-private playlist-read-collaborative",
+        )
+
+        auth_url = sp_oauth.get_authorize_url(state=session_id)
+        return RedirectResponse(auth_url, status_code=307)
+
+    except Exception as e:
+        logging.exception(f"Authentication error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={'success': "False", 'message': f'Authentication error: {str(e)}'}
+        )
 @router.get("/gett")
 
 async def sendjwt():
@@ -34,14 +72,11 @@ async def setYT(
     authorization: Optional[str] = Header(None)
 ):
     try:
-        # Extract header variable from request body
         header = resp.get("headers")
   
         
-        # Get the authorization token
         token = authorization
         
-        # Extract abc from request body
         abc = resp.get("abc")
         
         if not authorization:
@@ -49,14 +84,11 @@ async def setYT(
         
         
         
-        # Check if required fields are present
         if not all([header, token]):
             return {"status": "error", "message": "Missing required fields"}
         
-        # Decode JWT token
         jwt_decode = jwt.decode(token, Config.SECRET, algorithms=["HS256"])
         
-        # Call setup_yt function with session_id and header from body
         setup_result = setup(jwt_decode["uuid"], header)
         
         if setup_result["success"]:
@@ -95,7 +127,7 @@ async def authenticate(authorization: str = Header(None)):
                 content={'success': "False", 'message': 'Invalid JWT payload - missing uuid'}
             )
         logging.debug(f"Calling transfer_service.authenticate_services with uuid: {uuid_val}")
-        manager = transfer_service.TransferManager()
+        manager = transfer_service.TransferManager(uuid_val)
         success, message = manager.authenticate_services(uuid_val)
         logging.debug(f"Authentication result: success={success}, message={message}")
         if success:

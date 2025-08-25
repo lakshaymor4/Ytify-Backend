@@ -1,23 +1,49 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from services import transfer_service
 from celery_config import celery  
 from celery.result import AsyncResult
+from pydantic import BaseModel
+from typing import List, Dict, Any
 from fastapi import APIRouter
-
+from services.celery_task import transfer_playlists_task
+from typing import Optional
+import jwt
+from config import Config
 router = APIRouter()
 app = FastAPI()
 
-@router.post("/")
-async def start_transfer(body: dict):
-    playlist_ids = body.get("playlist_ids", [])
-    options = body.get("options", {})
+class TransferBody(BaseModel):
+    playlist_ids: List[str]
+    options: Optional[Dict[str, Any]] = {}
 
-    if not playlist_ids:
+@router.post("/start")
+async def start_transfer( body: TransferBody,  authorization: Optional[str] = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+
+    if not body.playlist_ids:
         raise HTTPException(status_code=400, detail="No playlists selected")
 
-    task = transfer_service.transfer_playlists_task.delay(playlist_ids, options)
-    return {"success": True, "task_id": task.id}
+    try:
+        decoded_token = jwt.decode(authorization, Config.SECRET, algorithms=["HS256"])
+        session_i = decoded_token.get("uuid")
+        if not session_i:
+            raise HTTPException(status_code=401, detail="Invalid token: session_id missing")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
+    # Trigger Celery task
+    try:
+        task = transfer_playlists_task.delay(
+            session_id=session_i,
+            selected_playlist_ids=body.playlist_ids,
+            options=body.options
+        )
+        return {"success": "True", "task_id": task.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start transfer: {str(e)}")
 
 @router.get("/status/{task_id}")
 async def get_status(task_id: str):

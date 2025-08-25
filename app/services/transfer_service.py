@@ -7,8 +7,8 @@ from utils import log_message
 from . import gai
 
 class TransferManager:
-    def __init__(self, progress_callback=None):
-        self.spotify_client = SpotifyClient()
+    def __init__(self, session_id:str,progress_callback=None):
+        self.spotify_client = SpotifyClient(session_id)
         self.youtube_client = YouTubeClient()
         self.progress_callback = progress_callback
         self.transfer_stats = {
@@ -33,7 +33,7 @@ class TransferManager:
     def get_spotify_playlists(self):
         return self.spotify_client.get_playlist()
     
-    def transfer_playlists(self, selected_playlists, options=None):
+    def transfer_playlists(self, session_id,selected_playlists, options=None):
         if options is None:
             options = {
                 'create_new_playlists': True,
@@ -49,7 +49,7 @@ class TransferManager:
                 self._update_progress(f"Processing playlist: {playlist['name']}", 
                                     (i / total_playlists) * 100)
                 
-                success = self._transfer_single_playlist(playlist, options)
+                success = self._transfer_single_playlist(session_id,playlist, options)
                 
                 if success:
                     log_message(f"Successfully transferred playlist: {playlist['name']}")
@@ -63,7 +63,7 @@ class TransferManager:
         self._update_progress("Transfer complete!", 100)
         return self._generate_transfer_report()
     
-    def _transfer_single_playlist(self, playlist, options):
+    def _transfer_single_playlist(self,session_id, playlist, options):
         playlist_name = playlist['name']
         playlist_id = playlist['id']
         
@@ -77,9 +77,9 @@ class TransferManager:
         self.transfer_stats['total_tracks'] += len(tracks)
         
         if playlist_id == 'liked_songs':
-            return self._transfer_liked_songs(tracks)
+            return self._transfer_liked_songs(session_id,tracks)
         
-        exists, existing_id = self.youtube_client.playlist_exists(playlist_name)
+        exists, existing_id = self.youtube_client.playlist_exists(session_id,playlist_name)
         
         if exists and not options.get('overwrite_existing', False):
             log_message(f"Playlist '{playlist_name}' already exists. Skipping.")
@@ -91,6 +91,7 @@ class TransferManager:
                 log_message(f"Using existing playlist: {playlist_name}")
             else:
                 youtube_playlist_id = self.youtube_client.create_playlist(
+                    session_id=session_id,
                     name=playlist_name,
                     description=playlist.get('description', ''),
                     privacy_status=options.get('privacy_status', 'PRIVATE')
@@ -101,9 +102,9 @@ class TransferManager:
             log_message(f"Failed to create playlist '{playlist_name}': {str(e)}")
             return False
         
-        return self._transfer_tracks_to_playlist(tracks, youtube_playlist_id, playlist_name)
+        return self._transfer_tracks_to_playlist(session_id,tracks, youtube_playlist_id, playlist_name)
     
-    def _transfer_liked_songs(self, tracks):
+    def _transfer_liked_songs(self,session_id, tracks):
         self._update_progress("Transferring liked songs...")
         
         successful = 0
@@ -116,13 +117,14 @@ class TransferManager:
                 )
                 
                 youtube_track, similarity = self.youtube_client.search_song(
+                    session_id,
                     track['name'], 
                     ', '.join(track['artists']),
                     track['album']
                 )
                 
                 if youtube_track:
-                    if self.youtube_client.add_song_to_liked(youtube_track['videoId']):
+                    if self.youtube_client.add_song_to_liked(session_id,youtube_track['videoId']):
                         successful += 1
                         self.transfer_stats['successful_transfers'] += 1
                         log_message(f"✓ Liked: {track['name']} by {', '.join(track['artists'])}")
@@ -145,17 +147,19 @@ class TransferManager:
         log_message(f"Liked Songs transfer complete: {successful} successful, {failed} failed")
         return successful > 0
     
-    def _transfer_tracks_to_playlist(self, tracks, youtube_playlist_id, playlist_name):
+    def _transfer_tracks_to_playlist(self,session_id, tracks, youtube_playlist_id, playlist_name):
         successful = 0
         failed = 0
         
         for i, track in enumerate(tracks):
             try:
+                failed_tracks_with_ai = []
                 self._update_progress(
                     f"Processing track {i+1}/{len(tracks)}: {track['name']}"
                 )
                 
                 youtube_track, similarity = self.youtube_client.search_song(
+                    session_id,
                     track['name'], 
                     ', '.join(track['artists']),
                     track['album']
@@ -165,7 +169,7 @@ class TransferManager:
                     log_message(f"Initial search failed, trying AI fallback for: {track['name']}")
                     
                     ai_song_title = gai.get_song(track['name'], ', '.join(track['artists']))
-                    failed_tracks_with_ai = []
+                   
                     if ai_song_title != "No result found":
                         failed_tracks_with_ai.append({
                     'original_track': track,
@@ -173,7 +177,7 @@ class TransferManager:
                 })
                 
                 if youtube_track:
-                    if self.youtube_client.add_song_to_playlist(youtube_playlist_id, youtube_track['videoId']):
+                    if self.youtube_client.add_song_to_playlist(session_id,youtube_playlist_id, youtube_track['videoId']):
                         successful += 1
                         self.transfer_stats['successful_transfers'] += 1
                         log_message(f"Added: {track['name']} by {', '.join(track['artists'])}")

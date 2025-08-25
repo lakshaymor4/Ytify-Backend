@@ -16,7 +16,6 @@ from langchain_core.messages import  HumanMessage
 def get_song(name , artist):
     tools = [TavilySearchResults(max_results=5)]
 
-    llm = ChatGroq(model = "gemma2-9b-it")
 
     llm_with_tools = ChatGroq(model="gemma2-9b-it").bind_tools(tools)
 

@@ -9,36 +9,18 @@ class SpotifyClient:
         self.sp = None
         self.user_id = None
         self.session_id = session_id
-        try:
-            if self.session_id:
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                cache_path = os.path.join(Config.SPOTIFY_CACHE_DIR, f"spotify_cache_{session_id}.json")
-            else:
-                cache_path = Config.SPOTIFY_CACHE_FILE
-
-            auth_manager = SpotifyOAuth(
-                client_id=Config.SPOTIFY_CLIENT_ID,
-                client_secret=Config.SPOTIFY_CLIENT_SECRET,
-                redirect_uri=Config.SPOTIFY_REDIRECT_URI,
-                scope=self.scope,
-                cache_path=cache_path
-            )
-
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
-            user_info = self.sp.current_user()
-            self.user_id = user_info['id']
-            self.authenticated = True
-        except Exception as e:
-            self.authenticated = False
-            self.auth_error = str(e)
+        self.authenticated = False
+        self.auth_error = None
 
     def authenticate(self):
         try:
-            if self.session_id:
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                cache_path = os.path.join(Config.SPOTIFY_CACHE_DIR, f"spotify_cache_{session_id}.json")
-            else:
-                cache_path = Config.SPOTIFY_CACHE_FILE
+            if not self.session_id:
+                return False, "No session_id provided for Spotify authentication."
+
+            cache_path = os.path.join(Config.SPOTIFY_CACHE_DIR, f"spotify_cache_{self.session_id}.json")
+
+            if not os.path.exists(cache_path):
+                return False, "Spotify not authenticated yet. Please login first."
 
             auth_manager = SpotifyOAuth(
                 client_id=Config.SPOTIFY_CLIENT_ID,
@@ -48,26 +30,38 @@ class SpotifyClient:
                 cache_path=cache_path
             )
 
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
+            token_info = auth_manager.get_cached_token()
+            if not token_info:
+                return False, "Spotify token missing or expired. Please login again."
 
+            self.sp = spotipy.Spotify(auth=token_info["access_token"])
             user_info = self.sp.current_user()
-            self.user_id = user_info['id']
+            self.user_id = user_info["id"]
 
+            self.authenticated = True
             return True, f"Successfully authenticated as {user_info['display_name']}"
 
         except Exception as e:
+            self.authenticated = False
+            self.auth_error = str(e)
             return False, f"Authentication failed: {str(e)}"
+
+
     def get_playlist(self):
+        success, message = self.authenticate()
+        if not success:
+            raise Exception(message)
         if not self.sp :
             raise Exception("Not Authenticated yet")
         playlists = []
 
-        total_liked = self.sp.current_user_saved_tracks_add(limit=1)
+        total_liked = self.sp.current_user_saved_tracks(limit=1)
+        total = total_liked['total']
         playlists.append({
             'id': 'liked_songs',
             'name': 'Liked Songs',
             'description': 'Your liked songs from Spotify',
-            'tracks': {'total': total_liked},
+            'tracks': {'total': total},
             'public': False,
             'owner': {'display_name': 'Spotify'}
         })
