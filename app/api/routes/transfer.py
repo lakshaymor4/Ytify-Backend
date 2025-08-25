@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from services.celery_task import transfer_playlists_task
 from typing import Optional
 import jwt
+import redis
 from config import Config
 router = APIRouter()
 app = FastAPI()
@@ -45,32 +46,26 @@ async def start_transfer( body: TransferBody,  authorization: Optional[str] = He
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start transfer: {str(e)}")
 
-@router.get("/status/{task_id}")
-async def get_status(task_id: str):
-    result = celery.AsyncResult(task_id)
+@router.get("/status/{token}")
+async def get_status(token: str):
+    jwt_decode = jwt.decode(token, Config.SECRET, algorithms=["HS256"])
+    session_id = jwt_decode.get("uuid")
+    result = redis.Redis.from_url(Config.REDIS).get(session_id)
 
-    if result.state == "PENDING":
-        return {"task_id": task_id, "status": "pending", "progress": 0}
+    if result is None:
+        return {"session_id": session_id, "status": "not found"}
 
-    elif result.state == "PROGRESS":
-        return {
-            "task_id": task_id,
-            "status": "in-progress",
-            "progress": result.info.get("progress", 0),
-            "current": result.info.get("current", 0),
-            "total": result.info.get("total", 0),
-            "current_playlist": result.info.get("current_playlist", None)
-        }
+    # decode and convert to int
+    try:
+        progress = int(result.decode("utf-8"))
+    except (ValueError, AttributeError):
+        return {"session_id": session_id, "status": "invalid value", "progress": result}
 
-    elif result.state == "SUCCESS":
-        return {"task_id": task_id, "status": "completed", "result": result.result}
+    if progress < 100:
+        return {"session_id": session_id, "status": "in progress", "progress": progress}
+    return {"session_id": session_id, "status": "completed", "progress": progress}
 
-    elif result.state == "FAILURE":
-        return {"task_id": task_id, "status": "failed", "error": str(result.info)}
 
-    else:
-        return {"task_id": task_id, "status": result.state}
-    
 @router.post("/cancel/{task_id}")
 def cancel_task(task_id: str):
     result = AsyncResult(task_id, app=celery)

@@ -9,3 +9,4 @@ langchain-groq
 pyjwt
 jsonify
 celery
+redis

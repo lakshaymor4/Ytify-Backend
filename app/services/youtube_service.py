@@ -46,13 +46,18 @@ class YouTubeClient:
         except Exception as e:
             raise Exception(f"Failed to create playlist: {str(e)}")
 
-    def search_song(self, session_id, track_name, artist_name, album_name=None):
+    def search_song(self, mode , session_id, track_name, artist_name, album_name=None):
         self._ensure_authenticated(session_id)
         query = f"{track_name} {artist_name}"
         if album_name:
             query += f" {album_name}"
         
         try:
+            threshold = 0
+            if(mode=="ai"): 
+                threshold = Config.SIMILARITY_AI
+            else:
+                threshold = Config.SIMILARITY_THRESHOLD
             search_results = self.ytmusic.search(query, filter="songs", limit=Config.MAX_SEARCH_RESULTS)
             best_match, best_score = None, 0
             for result in search_results:
@@ -62,7 +67,7 @@ class YouTubeClient:
                         result.get('title', ''),
                         result.get('artists', [{}])[0].get('name', '') if result.get('artists') else ''
                     )
-                    if score > best_score and score >= Config.SIMILARITY_THRESHOLD:
+                    if score > best_score and score >= threshold:
                         best_score, best_match = score, result
             return best_match, best_score
         except Exception as e:
