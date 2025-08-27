@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 import os
 router = APIRouter()
-# Set up logging for debug
 logging.basicConfig(level=logging.DEBUG)
 
 from spotipy.oauth2 import SpotifyOAuth

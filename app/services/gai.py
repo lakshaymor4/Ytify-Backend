@@ -13,11 +13,10 @@ import json
 load_dotenv()
 
 def get_song(name, artist):
-    # Load keys
+  
     tavily_key = os.getenv("TAVILY_API_KEY")
     groq_key = os.getenv("GROQ_API_KEY")
 
-    # Define State before referencing it
     class State(TypedDict):
         messages: Annotated[list[AnyMessage], add_messages]
 
@@ -42,14 +41,13 @@ def get_song(name, artist):
 
         return {"messages": [AIMessage(content="No result found")]}
 
-    # Tools and LLM setup
+   
     tools = [TavilySearchResults(max_results=5, tavily_api_key=tavily_key)]
     llm_with_tools = ChatGroq(model="gemma2-9b-it").bind_tools(tools)
 
     def tool_calling_llm(state: State):
         return {"messages": [llm_with_tools.invoke(state["messages"])]}
 
-    # Build graph
     builder = StateGraph(State)
     builder.add_node("tool_calling_llm", tool_calling_llm)
     builder.add_node("tools", ToolNode(tools))
@@ -60,7 +58,6 @@ def get_song(name, artist):
     builder.add_edge("pick_best_title", END)
     graph = builder.compile()
 
-    # Invoke graph
     test_messages = graph.invoke({
         "messages": [
             HumanMessage(content=(

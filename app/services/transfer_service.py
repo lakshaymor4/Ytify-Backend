@@ -8,11 +8,16 @@ from . import gai
 import redis
 from config import Config
 
+class TaskCancelledException(Exception):
+    pass
+
 class TransferManager:
     def __init__(self, session_id:str, progress_callback=None):
         self.spotify_client = SpotifyClient(session_id)
         self.youtube_client = YouTubeClient()
         self.progress_callback = progress_callback
+        self.session_id = session_id
+        self.task = None 
         self.transfer_stats = {
             'total_tracks': 0,
             'successful_transfers': 0,
@@ -38,7 +43,10 @@ class TransferManager:
     def get_spotify_playlists(self):
         return self.spotify_client.get_playlist()
     
-    def transfer_playlists(self, session_id, selected_playlists, options=None):
+    def transfer_playlists(self, session_id, selected_playlists, options=None, task=None):
+       
+        self.task = task
+        
         if options is None:
             options = {
                 'create_new_playlists': True,
@@ -46,7 +54,7 @@ class TransferManager:
                 'privacy_status': 'PRIVATE'
             }
         
-        # Reset counters
+     
         self.transfer_stats = {
             'total_tracks': 0,
             'successful_transfers': 0,
@@ -58,14 +66,14 @@ class TransferManager:
             'processed_tracks': 0  
         }
         
-        # Cache for created playlists to avoid duplicate creation
         self.created_playlists = {}
         
-        # First pass: collect all tracks from all playlists
         all_tracks_data = []
-        self._update_progress(session_id, "Collecting tracks from all playlists...")
+        self._update_progress(session_id, "Collecting tracks from playlists")
         
         for playlist in selected_playlists:
+            self._check_cancellation(session_id, task)
+            
             tracks = self.spotify_client.get_playlist_tracks(playlist['id'])
             if tracks:
                 for track in tracks:
@@ -78,9 +86,10 @@ class TransferManager:
         self.transfer_stats['total_tracks'] = len(all_tracks_data)
         self._update_progress(session_id, f"Found {len(all_tracks_data)} total tracks to transfer")
         
-        # Second pass: transfer all tracks
         for track_data in all_tracks_data:
             try:
+                self._check_cancellation(session_id, task)
+                
                 self.transfer_stats['processed_tracks'] += 1
                 track = track_data['track']
                 playlist = track_data['playlist']
@@ -90,7 +99,6 @@ class TransferManager:
                     f"Processing track {self.transfer_stats['processed_tracks']}/{self.transfer_stats['total_tracks']}: {track['name']}"
                 )
                 
-                # Handle liked songs differently
                 if track_data['playlist_id'] == 'liked_songs':
                     self._transfer_single_liked_song(session_id, track)
                 else:
@@ -98,15 +106,33 @@ class TransferManager:
                 
                 time.sleep(0.1)
                 
+            except TaskCancelledException as e:
+                raise e
             except Exception as e:
                 self.transfer_stats['failed_transfers'] += 1
                 log_message(f"✗ Error processing {track['name']}: {str(e)}")
 
         self._update_progress(session_id, "Transfer complete!")
         return self._generate_transfer_report()
+
+    def _check_cancellation(self, session_id, task):
+        """Check if the task should be cancelled"""
+        if task is None:
+            return
+            
+        r = redis.Redis.from_url(Config.REDIS)
+        cancel_flag = r.get(f"cancel_{session_id}")
+        
+        if cancel_flag and cancel_flag.decode('utf-8') == 'true':
+            r.delete(f"cancel_{session_id}")
+            r.set(f"task_status_{session_id}", "cancelled")
+            r.set(session_id, 0) 
+            
+            log_message(f"Transfer cancelled for session {session_id}")
+            
+            raise TaskCancelledException("Task cancelled by user")
     
     def _transfer_single_liked_song(self, session_id, track):
-        """Transfer a single track to liked songs"""
         try:
             youtube_track, similarity = self.youtube_client.search_song(
                 session_id,
@@ -131,22 +157,19 @@ class TransferManager:
             log_message(f"✗ Error processing liked song {track['name']}: {str(e)}")
 
     def _transfer_single_track_to_playlist(self, session_id, track, playlist, options):
-        """Transfer a single track to a specific playlist"""
+        
         try:
             playlist_name = playlist['name']
             
-            # Check if we already have this playlist ID cached
             if playlist_name not in self.created_playlists:
                 youtube_playlist_id = self._get_or_create_youtube_playlist(session_id, playlist, options)
                 if not youtube_playlist_id:
                     self.transfer_stats['failed_transfers'] += 1
                     return
-                # Cache the playlist ID
                 self.created_playlists[playlist_name] = youtube_playlist_id
             else:
                 youtube_playlist_id = self.created_playlists[playlist_name]
             
-            # Search for the track
             youtube_track, similarity = self.youtube_client.search_song(
                 "reg",
                 session_id,
@@ -155,7 +178,6 @@ class TransferManager:
                 track['album']
             )
 
-            # Fallback to AI search if regular search fails
             if not youtube_track:
                 log_message(f"Initial search failed, trying AI fallback for: {track['name']}")
                 ai_song_title = gai.get_song(track['name'], ', '.join(track['artists']))
@@ -169,7 +191,6 @@ class TransferManager:
                         track['album']
                     )
 
-            # Add to playlist
             if youtube_track:
                 if self.youtube_client.add_song_to_playlist(session_id, youtube_playlist_id, youtube_track['videoId']):
                     self.transfer_stats['successful_transfers'] += 1
@@ -189,7 +210,6 @@ class TransferManager:
         """Get existing or create new YouTube playlist"""
         playlist_name = playlist['name']
         
-        # Check if playlist exists
         exists, existing_id = self.youtube_client.playlist_exists(session_id, playlist_name)
         
         if exists and not options.get('overwrite_existing', False):
@@ -217,24 +237,20 @@ class TransferManager:
         total_tracks = self.transfer_stats.get('total_tracks', 0)
         processed_tracks = self.transfer_stats.get('processed_tracks', 0)
         
-        # Debug logging
         print(f"DEBUG: total_tracks={total_tracks}, processed_tracks={processed_tracks}")
         
-        # Calculate progress
         if total_tracks > 0:
-            # Simple calculation: processed tracks / total tracks * 100
             total_progress = (processed_tracks / total_tracks) * 100
         else:
-            # If no total tracks yet, show 0% progress
             total_progress = 0.0
             
         total_progress = round(total_progress, 2)
         total_progress = min(total_progress, 100)
         
-        # Debug logging
+        
         print(f"DEBUG: Setting progress to {total_progress}% in Redis")
         
-        # Always set progress in Redis
+       
         r.set(session_id, total_progress)
         
         message = f"{message} (Overall Progress: {total_progress}%)"
