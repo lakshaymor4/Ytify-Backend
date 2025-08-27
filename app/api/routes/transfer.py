@@ -55,9 +55,9 @@ async def get_status(token: str):
     if result is None:
         return {"session_id": session_id, "status": "not found"}
 
-    # decode and convert to int
+    # decode and convert to float
     try:
-        progress = int(result.decode("utf-8"))
+        progress = float(result.decode("utf-8"))
     except (ValueError, AttributeError):
         return {"session_id": session_id, "status": "invalid value", "progress": result}
 
